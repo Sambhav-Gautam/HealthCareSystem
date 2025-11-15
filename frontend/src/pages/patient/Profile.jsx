@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { patientService } from '../../services/patient'
 import Card from '../../components/Card'
@@ -19,18 +19,52 @@ export default function PatientProfile() {
   })
 
   const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
     dateOfBirth: '',
     gender: '',
-    bloodGroup: '',
+    bloodType: '',
     height: '',
     weight: '',
     medicalHistory: '',
     allergies: '',
-    currentMedications: '',
+    medications: '',
     emergencyContactName: '',
     emergencyContactPhone: '',
     emergencyContactRelation: '',
   })
+
+  const hydratedProfile = useMemo(() => profile?.data || {}, [profile])
+
+  useEffect(() => {
+    if (!hydratedProfile) return
+
+    setFormData({
+      firstName: hydratedProfile.firstName || '',
+      lastName: hydratedProfile.lastName || '',
+      email: hydratedProfile.email || '',
+      phone: hydratedProfile.phone || '',
+      dateOfBirth: hydratedProfile.dateOfBirth?.split('T')[0] || '',
+      gender: hydratedProfile.gender || '',
+      bloodType: hydratedProfile.bloodType || '',
+      height: hydratedProfile.height || '',
+      weight: hydratedProfile.weight || '',
+      medicalHistory: Array.isArray(hydratedProfile.medicalHistory)
+        ? hydratedProfile.medicalHistory.join(', ')
+        : hydratedProfile.medicalHistory || '',
+      allergies: Array.isArray(hydratedProfile.allergies)
+        ? hydratedProfile.allergies.join(', ')
+        : hydratedProfile.allergies || '',
+      medications: Array.isArray(hydratedProfile.medications)
+        ? hydratedProfile.medications.join(', ')
+        : hydratedProfile.medications || '',
+      emergencyContactName: hydratedProfile.emergencyContact?.name || '',
+      emergencyContactPhone: hydratedProfile.emergencyContact?.phone || '',
+      emergencyContactRelation: hydratedProfile.emergencyContact?.relationship || '',
+    })
+  }, [hydratedProfile])
 
   const updateMutation = useMutation({
     mutationFn: patientService.updateProfile,
@@ -43,7 +77,26 @@ export default function PatientProfile() {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    updateMutation.mutate(formData)
+
+    const payload = {
+      ...formData,
+      medicalHistory: formData.medicalHistory
+        ? formData.medicalHistory.split(',').map((item) => item.trim()).filter(Boolean)
+        : [],
+      allergies: formData.allergies
+        ? formData.allergies.split(',').map((item) => item.trim()).filter(Boolean)
+        : [],
+      medications: formData.medications
+        ? formData.medications.split(',').map((item) => item.trim()).filter(Boolean)
+        : [],
+      emergencyContact: {
+        name: formData.emergencyContactName,
+        phone: formData.emergencyContactPhone,
+        relationship: formData.emergencyContactRelation,
+      },
+    }
+
+    updateMutation.mutate(payload)
   }
 
   if (isLoading) {
@@ -53,7 +106,10 @@ export default function PatientProfile() {
   return (
     <div>
       <div className="mb-6 flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
+          <p className="text-sm text-gray-500">Keep your personal and medical information up to date.</p>
+        </div>
         <Button
           onClick={() => setIsEditing(!isEditing)}
           variant={isEditing ? 'secondary' : 'primary'}
@@ -64,6 +120,39 @@ export default function PatientProfile() {
 
       <form onSubmit={handleSubmit}>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <Card title="General Information">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                label="First Name"
+                type="text"
+                value={formData.firstName}
+                onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                disabled={!isEditing}
+              />
+              <Input
+                label="Last Name"
+                type="text"
+                value={formData.lastName}
+                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                disabled={!isEditing}
+              />
+              <Input
+                label="Email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                disabled={!isEditing}
+              />
+              <Input
+                label="Phone"
+                type="tel"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                disabled={!isEditing}
+              />
+            </div>
+          </Card>
+
           <Card title="Personal Information">
             <div className="space-y-4">
               <Input
@@ -92,8 +181,8 @@ export default function PatientProfile() {
               <Input
                 label="Blood Group"
                 type="text"
-                value={formData.bloodGroup}
-                onChange={(e) => setFormData({ ...formData, bloodGroup: e.target.value })}
+                value={formData.bloodType}
+                onChange={(e) => setFormData({ ...formData, bloodType: e.target.value })}
                 disabled={!isEditing}
               />
               <div className="grid grid-cols-2 gap-4">
@@ -140,8 +229,8 @@ export default function PatientProfile() {
               <Input
                 label="Current Medications"
                 type="text"
-                value={formData.currentMedications}
-                onChange={(e) => setFormData({ ...formData, currentMedications: e.target.value })}
+                value={formData.medications}
+                onChange={(e) => setFormData({ ...formData, medications: e.target.value })}
                 disabled={!isEditing}
                 placeholder="e.g., Aspirin 100mg daily"
               />

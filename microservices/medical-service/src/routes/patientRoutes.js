@@ -17,9 +17,8 @@ const router = express.Router();
 router.use(protect);
 router.use(authorize('patient'));
 
-router.route('/profile')
-  .get(getProfile)
-  .put(updateProfile);
+router.get('/profile', getProfile);
+router.put('/profile', updateProfile);
 
 router.get('/doctors', getAvailableDoctors);
 router.get('/dashboard/stats', getPatientStats);

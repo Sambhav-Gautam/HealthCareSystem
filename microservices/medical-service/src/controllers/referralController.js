@@ -4,6 +4,11 @@ const Referral = require('../models/Referral');
 const Doctor = require('../models/Doctor');
 const Appointment = require('../models/Appointment');
 const { sendReferralNotification } = require('../services/emailService');
+const {
+  getDoctorProfileByUserId,
+  findPatientByIdOrUserId,
+  ensurePatientProfile,
+} = require('../utils/profileHelpers');
 
 exports.createReferral = asyncHandler(async (req, res, next) => {
   const {
@@ -18,20 +23,30 @@ exports.createReferral = asyncHandler(async (req, res, next) => {
     investigations,
   } = req.body;
 
+  const doctorProfile = await getDoctorProfileByUserId(req.user.id);
+  if (!doctorProfile) {
+    return next(new ErrorResponse('Doctor profile not found', 404));
+  }
+
   const appointment = await Appointment.findById(appointmentId);
-  if (!appointment || appointment.doctorId.toString() !== req.user.id) {
+  if (!appointment || appointment.doctorId.toString() !== doctorProfile._id.toString()) {
     return next(new ErrorResponse('Appointment not found or unauthorized', 403));
   }
 
-  const referredDoctor = await User.findById(referredDoctorId);
-  if (!referredDoctor || referredDoctor.role !== 'doctor') {
+  const referredDoctor = await Doctor.findById(referredDoctorId);
+  if (!referredDoctor) {
     return next(new ErrorResponse('Referred doctor not found', 404));
   }
 
+  const patientRecord = await findPatientByIdOrUserId(patientId);
+  if (!patientRecord) {
+    return next(new ErrorResponse('Patient not found', 404));
+  }
+
   const referral = await Referral.create({
-    patientId,
-    referringDoctorId: req.user.id,
-    referredDoctorId,
+    patientId: patientRecord._id,
+    referringDoctorId: doctorProfile._id,
+    referredDoctorId: referredDoctor._id,
     originalAppointmentId: appointmentId,
     reason,
     specialtyNeeded,
@@ -60,7 +75,12 @@ exports.createReferral = asyncHandler(async (req, res, next) => {
 exports.getReferralsSent = asyncHandler(async (req, res, next) => {
   const { status, page = 1, limit = 10 } = req.query;
 
-  const query = { referringDoctorId: req.user.id };
+  const doctorProfile = await getDoctorProfileByUserId(req.user.id);
+  if (!doctorProfile) {
+    return next(new ErrorResponse('Doctor profile not found', 404));
+  }
+
+  const query = { referringDoctorId: doctorProfile._id };
   if (status) query.status = status;
 
   const referrals = await Referral.find(query)
@@ -84,7 +104,12 @@ exports.getReferralsSent = asyncHandler(async (req, res, next) => {
 exports.getReferralsReceived = asyncHandler(async (req, res, next) => {
   const { status, page = 1, limit = 10 } = req.query;
 
-  const query = { referredDoctorId: req.user.id };
+  const doctorProfile = await getDoctorProfileByUserId(req.user.id);
+  if (!doctorProfile) {
+    return next(new ErrorResponse('Doctor profile not found', 404));
+  }
+
+  const query = { referredDoctorId: doctorProfile._id };
   if (status) query.status = status;
 
   const referrals = await Referral.find(query)
@@ -129,7 +154,12 @@ exports.updateReferralStatus = asyncHandler(async (req, res, next) => {
 });
 
 exports.getPatientReferrals = asyncHandler(async (req, res, next) => {
-  const referrals = await Referral.find({ patientId: req.user.id })
+  const patientProfile = await ensurePatientProfile(req.user);
+  if (!patientProfile) {
+    return next(new ErrorResponse('Patient profile not found', 404));
+  }
+
+  const referrals = await Referral.find({ patientId: patientProfile._id })
     .populate('referringDoctorId', 'firstName lastName specialty')
     .populate('referredDoctorId', 'firstName lastName specialty')
     .sort({ createdAt: -1 });

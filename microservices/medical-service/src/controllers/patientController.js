@@ -5,7 +5,7 @@ const Doctor = require('../models/Doctor');
 const Appointment = require('../models/Appointment');
 const TestResult = require('../models/TestResult');
 const { sendAppointmentConfirmation } = require('../services/emailService');
-const { getPatientProfileByUserId, ensurePatientProfile } = require('../utils/profileHelpers');
+const { ensurePatientProfile } = require('../utils/profileHelpers');
 
 exports.getProfile = asyncHandler(async (req, res, next) => {
   const patient = await ensurePatientProfile(req.user);
@@ -18,6 +18,14 @@ exports.getProfile = asyncHandler(async (req, res, next) => {
 
 exports.updateProfile = asyncHandler(async (req, res, next) => {
   const allowedFields = [
+    'firstName',
+    'lastName',
+    'email',
+    'phone',
+    'dateOfBirth',
+    'gender',
+    'address',
+    'avatar',
     'bloodType',
     'height',
     'weight',
@@ -38,22 +46,47 @@ exports.updateProfile = asyncHandler(async (req, res, next) => {
 
   await ensurePatientProfile(req.user, req.body);
 
+  const normalizeList = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      return value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  if (updateData.allergies !== undefined) {
+    updateData.allergies = normalizeList(updateData.allergies).map((name) => ({ name }));
+  }
+
+  if (updateData.medicalHistory !== undefined) {
+    updateData.medicalHistory = normalizeList(updateData.medicalHistory).map((condition) => ({ condition }));
+  }
+
+  if (updateData.medications !== undefined) {
+    updateData.medications = normalizeList(updateData.medications).map((name) => ({ name }));
+  }
+
+  if (
+    req.body.emergencyContactName ||
+    req.body.emergencyContactPhone ||
+    req.body.emergencyContactRelation
+  ) {
+    updateData.emergencyContact = {
+      name: req.body.emergencyContactName || '',
+      phone: req.body.emergencyContactPhone || '',
+      relationship: req.body.emergencyContactRelation || '',
+    };
+  }
+
   const patient = await Patient.findOneAndUpdate(
     { userId: req.user.id },
     updateData,
     { new: true, runValidators: true, upsert: true }
   );
-
-  if (req.body.firstName || req.body.lastName || req.body.phone || req.body.dateOfBirth || req.body.gender || req.body.address) {
-    const userUpdateData = {};
-    ['firstName', 'lastName', 'phone', 'dateOfBirth', 'gender', 'address'].forEach((field) => {
-      if (req.body[field] !== undefined) {
-        userUpdateData[field] = req.body[field];
-      }
-    });
-
-    await User.findByIdAndUpdate(req.user.id, userUpdateData, { new: true, runValidators: true });
-  }
 
   res.status(200).json({
     success: true,
@@ -95,7 +128,7 @@ exports.createAppointment = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Doctor not found', 404));
   }
 
-  const patientProfile = await ensurePatientProfile(req.user.id);
+  const patientProfile = await ensurePatientProfile(req.user);
   if (!patientProfile) {
     return next(new ErrorResponse('Patient profile not found', 404));
   }
@@ -192,21 +225,9 @@ exports.getTestResults = asyncHandler(async (req, res, next) => {
 });
 
 exports.getAvailableDoctors = asyncHandler(async (req, res, next) => {
-  const Doctor = require('../models/Doctor');
-  
-  console.log('====================================');
-  console.log("Fetching ALL doctors from database");
-  console.log('====================================');
-
-  // Fetch ALL doctors without any filters
   const doctors = await Doctor.find({})
     .select('firstName lastName specialty qualification experience consultationFee department bio rating userId')
     .sort({ experience: -1 });
-
-  console.log('====================================');
-  console.log(`📋 Found ${doctors.length} doctors`);
-  console.log(doctors);
-  console.log('====================================');
 
   res.status(200).json({
     success: true,
